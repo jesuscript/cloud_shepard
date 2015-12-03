@@ -132,7 +132,7 @@ function getInventory(cb){
         inv = inv.concat("["+host+"]\n");
         
         _.times(Math.min(num, body.droplets.length), function(n){
-          inv = inv.concat(ips[i] + "\n");
+          inv = inv.concat(ips[i] + " user=root\n");
           
           i = (i+1) % body.droplets.length;
         });
