@@ -9,8 +9,6 @@ var DigitalOcean = require('do-wrapper'),
 
 var cli = commandLineArgs([
   { name: "mode", defaultOption: true, group: "control" },
-  { name: "name", alias: "a", type: String, defaultValue: "cloud-shepard",
-    description: "Name for the group of droplets to operate on (default: cloud_shepard)" },
   { name: "api-key", alias: "p", type: String, description: "DigitalOcean API key (required)" },
   { name: "ssh-key", alias: "s", type: String, group: "create",
     description: "Public ssh key file (required)"},
@@ -20,6 +18,7 @@ var cli = commandLineArgs([
   { name: "inventory-config", alias: "c", type: String, group: ["create", "inventory"],
     description: "Inventory configuration file (required)"}
 ]);
+
 
 try{
   var options = cli.parse();
@@ -31,54 +30,62 @@ try{
 if(options._all.help) improperUsage();
 
 var cPath = options._all["inventory-config"] ||
-      improperUsage("Inventory config file must be provided"),
-    config = JSON.parse(fs.readFileSync(cPath));
+      improperUsage("Inventory config file must be provided");
+
+var config = _.extend({
+  image: "ubuntu-15-10-x64",
+  name: "cloud_shepard",
+  region: "lon1",
+  size: "512mb",
+  image: "ubuntu-15-10-x64",
+  backups: false,
+  ipv6: false,
+  user_data: null,
+  private_networking: null,
+  hosts: []
+}, JSON.parse(fs.readFileSync(cPath)));
+
 
 var api = new DigitalOcean(options._none["api-key"] || improperUsage("No API key provided!"), 25);
 
 ({
   "create": function(){
-    var sshKey = options.create["ssh-key"];
-    
-    if(!sshKey) improperUsage("Create: no ssh key provided");
+    config.ssh_keys = [
+      execSync("ssh-keygen -E md5 -lf " +
+               (options.create["ssh-key"] || improperUsage("Create: no ssh key provided")))
+        .toString().match(/MD5:([^\s]+)/)[1]
+    ];
 
-    var dNum = _.reduce(flattenConfig(), function(tot,n){ return tot + n; },0);
+    async.each(config.hosts, function(host, cb){
+      var hostConf = _.extend({}, config, host);
 
-    async.times(dNum, function(n, cb){
-      api.dropletsCreate({
-        name: options._all.name,
-        region: "lon1",
-        size: "512mb",
-        "image": "ubuntu-15-10-x64",
-        "ssh_keys": [
-          execSync("ssh-keygen -E md5 -lf " + sshKey).toString().match(/MD5:([^\s]+)/)[1]
-        ],
-        "backups": false,
-        "ipv6": false,
-        "user_data": null,
-        "private_networking": null
-      },cb);
+      async.times(host.hosts, function(n, cb_i){
+        api.dropletsCreate(hostConf, cb_i);
+      }, cb);
     }, function(err, ress){
       if(err) throw err;
       
       var report = fancyReporter();
 
-      waitOperationEnd(function(body){
-        var numDone = _.where(body.droplets, {status: "active"}).length;
+
+      listDroplets(function(err, res, body){
+        var hostsTotal = body.droplets.length;
         
-        report("Creating " + dNum + " droplets", numDone, dNum);
+        waitOperationEnd(function(body){
+          var numDone = _.where(body.droplets, {status: "active"}).length;
+          
+          report("Creating " + hostsTotal + " droplets", numDone, hostsTotal);
 
-        return (numDone === dNum );
-      }, function(){
-        getInventory(function(inventory){
-          console.log(inventory);
+          return (numDone === hostsTotal);
+        }, function(){
+          getInventory(function(inventory){
+            console.log(inventory);
 
-          if(inventory) writeToFile(options.create["write-inventory-to"], inventory);
+            if(inventory) writeToFile(options.create["write-inventory-to"], inventory);
+          });
         });
       });
-      
     });
-
   },
   "destroy": function(){
     listDroplets(function(err, res, body){
@@ -120,41 +127,32 @@ var api = new DigitalOcean(options._none["api-key"] || improperUsage("No API key
 function getInventory(cb){
   listDroplets(function(err, res, body){
     if(body.droplets.length){
-      var inv = "";
-      
       var i = 0,
           ips = _.pluck(body.droplets,["networks","v4","0","ip_address"]);
 
-
-      var flatConf = flattenConfig();
+      var invPos = 0;
       
-      _.each(flatConf, function(num,host){
-        inv = inv.concat("["+host+"]\n");
-        
-        _.times(Math.min(num, body.droplets.length), function(n){
-          inv = inv.concat(ips[i] + " user=root\n");
-          
-          i = (i+1) % body.droplets.length;
+      cb(_.map(_.reduce(config.hosts, function(mappedInv, host){
+        var hostIps = _.slice(ips, invPos, invPos + host.hosts);
+
+        _.each(host.services, function(serv){
+          mappedInv[serv] = _.union(mappedInv[serv] || [], hostIps);
         });
-      });
-      cb(inv);
+        
+        invPos += host.hosts;
+        
+        return mappedInv;
+      }, {}), function(ips,serv){
+        return ("["+serv+"]\n").concat(_.map(ips, function(ip){
+          return ip + " user=root";
+        }).join("\n"));
+      }).join("\n"));
     }else{
       cb();
     }
   });
 }
 
-function flattenConfig(conf){
-  return _.reduce(config, function(fc, val, key){
-    //only goes 1 level deep, but will do for now
-    if(_.isPlainObject(val)){
-      _.extend(fc, val); 
-    }else{
-      fc[key] = val;
-    }
-    return fc;
-  }, {});
-}
 
 function writeToFile(path, content){
   if(path){
