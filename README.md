@@ -12,7 +12,7 @@ npm install -g cloud-shepard
 
 ### Usage
 
-'''
+```
 $ ./bin/cloud_shepard --help
 
 Cloud Shepard
@@ -37,7 +37,7 @@ inventory
 -w, --write-inventory-to string   Path for saving the inventory file
 -c, --config string               Configuration file (required)
 
-'''
+```
 
 An example config file can be found in `/example`
 
