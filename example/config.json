@@ -1,0 +1,19 @@
+{
+  "apiKey": "your Digital Ocean API key",
+  "sshKey": "ssh key file",
+  "ansibleInventory": "Location to write an Ansible inventory file to",
+  "droplets": {
+    "image": "ubuntu-15-10-x64",
+    "name": "example-droplet-name",
+    "size": "512mb",
+    "hosts": [{
+      "number": 2,
+      "hostnames": ["backend"]
+    },{
+      "number": 2,
+      "hostnames": ["frontend"],
+      "size": "1gb",
+      "image": "ubuntu-14-04-x64"
+    }]
+  }
+}
