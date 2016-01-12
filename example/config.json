@@ -1,7 +1,7 @@
 {
-  "apiKey": "your Digital Ocean API key",
-  "sshKey": "ssh key file",
-  "ansibleInventory": "Location to write an Ansible inventory file to",
+  "apiKey": "<your Digital Ocean API key>",
+  "sshKey": "<ssh key file>",
+  "ansibleInventory": "<Location to write an Ansible inventory file to>",
   "droplets": {
     "image": "ubuntu-15-10-x64",
     "name": "example-droplet-name",
